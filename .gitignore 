@@ -1,0 +1,15 @@
+# Ignorar variáveis de ambiente (suas chaves ficam protegidas)
+.env
+
+# Ignorar dependências
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
