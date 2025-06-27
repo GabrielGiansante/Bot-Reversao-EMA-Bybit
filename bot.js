@@ -1,5 +1,5 @@
 // =================================================================
-// BOT DE REVERSÃO EMA - VERSÃO DE DIAGNÓSTICO COMPLETA
+// BOT DE REVERSÃO EMA - VERSÃO FINAL COM SÍMBOLO CORRIGIDO
 // =================================================================
 
 const { RestClientV5 } = require('bybit-api');
@@ -8,8 +8,8 @@ const TA = require('technicalindicators');
 // --- Configurações do Bot ---
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
-const SYMBOL = 'BTCUSDC';
-const CATEGORY = 'linear'; // Vamos testar com 'linear' primeiro
+const SYMBOL = 'BTC-PERP'; // <-- A CORREÇÃO ESTÁ AQUI. USA O SÍMBOLO PERPÉTUO GENÉRICO
+const CATEGORY = 'linear'; // Para Contas Unificadas, tanto USDT quanto USDC são 'linear'
 const LEVERAGE_LONG = 10;
 const LEVERAGE_SHORT = 5;
 const EMA_PERIOD = 3;
@@ -17,15 +17,16 @@ const EMA_BAND_PERCENT = 0.003;
 const KLINE_INTERVAL = '60';
 const MIN_ORDER_QTY = 0.001;
 
+// --- Variáveis de Estado ---
 let currentPositionSide = 'None'; 
 let isChecking = false;
 
 const client = new RestClientV5({ key: API_KEY, secret: API_SECRET, testnet: false });
 
-// --- Funções com tratamento de erro detalhado ---
+// --- Funções de API e Indicadores ---
 async function getKlineData() {
   try {
-    const kline = await client.getKline({ category: CATEGORY, symbol: SYMBOL, interval: KLINE_INTERVAL, limit: EMA_PERIOD + 5 });
+    const kline = await client.getKline({ category: CATEGORY, symbol: SYMBOL, interval: KLINE_INTERVAL, limit: EMA_PERIOD + 10 });
     if (kline.retCode !== 0) {
         console.error("Erro da API ao buscar Kline:", JSON.stringify(kline));
         return [];
@@ -53,7 +54,7 @@ async function getCurrentPrice() {
 
 async function getAvailableBalance() {
   try {
-    const response = await client.getWalletBalance({ accountType: 'UNIFIED' }); // Assumindo conta UTA
+    const response = await client.getWalletBalance({ accountType: 'UNIFIED' });
     if (response.retCode !== 0) {
         console.error("Erro da API ao buscar Saldo:", JSON.stringify(response));
         return 0;
@@ -93,7 +94,7 @@ async function placeReverseOrder(side, leverage) {
     try {
         await client.setLeverage({ category: CATEGORY, symbol: SYMBOL, buyLeverage: String(leverage), sellLeverage: String(leverage) });
         
-        console.log("   - Passo 1: Fechando posições existentes (se houver)...");
+        console.log("   - Passo 1: Cancelando ordens abertas e fechando posição existente (se houver)...");
         await client.cancelAllOrders({ category: CATEGORY, symbol: SYMBOL });
         await client.submitOrder({ category: CATEGORY, symbol: SYMBOL, side: side === 'Long' ? 'Sell' : 'Buy', orderType: 'Market', qty: '0', reduceOnly: true, closeOnTrigger: true });
         
@@ -157,7 +158,7 @@ async function checkStrategy() {
 }
 
 // --- Inicialização do Bot ---
-console.log("==> BOT DE REVERSÃO EMA INICIADO (MODO DIAGNÓSTICO) <==");
+console.log("==> BOT DE REVERSÃO EMA INICIADO <==");
 console.log(`   - Ativo: ${SYMBOL} | Categoria: ${CATEGORY}`);
 console.log(`   - Estratégia: EMA(${EMA_PERIOD}) +/- ${EMA_BAND_PERCENT * 100}% no gráfico de ${KLINE_INTERVAL}m`);
 console.log(`   - Long: ${LEVERAGE_LONG}x | Short: ${LEVERAGE_SHORT}x`);
