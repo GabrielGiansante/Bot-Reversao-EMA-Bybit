@@ -1,5 +1,5 @@
 // =================================================================
-// BOT DE REVERSÃO EMA - VERSÃO FINAL COM SÍMBOLO BTCPERP
+// BOT DE REVERSÃO EMA - VERSÃO DE TESTE RÁPIDO (GATILHO 0.1%)
 // =================================================================
 
 const { RestClientV5 } = require('bybit-api');
@@ -8,20 +8,22 @@ const TA = require('technicalindicators');
 // --- Configurações do Bot ---
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
-const SYMBOL = 'BTCPERP'; // <-- A CORREÇÃO FINAL ESTÁ AQUI
+const SYMBOL = 'BTC-PERP'; 
 const CATEGORY = 'linear';
 const LEVERAGE_LONG = 10;
 const LEVERAGE_SHORT = 5;
 const EMA_PERIOD = 3;
-const EMA_BAND_PERCENT = 0.003;
+const EMA_BAND_PERCENT = 0.001; // <-- MUDANÇA PARA 0.1% DE TESTE
 const KLINE_INTERVAL = '60';
 const MIN_ORDER_QTY = 0.001;
 
+// --- Variáveis de Estado ---
 let currentPositionSide = 'None'; 
 let isChecking = false;
 
 const client = new RestClientV5({ key: API_KEY, secret: API_SECRET, testnet: false });
 
+// --- Funções (permanecem as mesmas) ---
 async function getKlineData() {
   try {
     const kline = await client.getKline({ category: CATEGORY, symbol: SYMBOL, interval: KLINE_INTERVAL, limit: EMA_PERIOD + 10 });
@@ -71,6 +73,8 @@ async function placeReverseOrder(side, leverage) {
         else { console.error("ERRO DE NEGÓCIO DA BYBIT (REVERSÃO):", JSON.stringify(res)); }
     } catch (error) { console.error("ERRO CRÍTICO NA CHAMADA DE REVERSÃO:", error); }
 }
+
+// --- Lógica Principal do Bot ---
 async function checkStrategy() {
   if (isChecking) { return; }
   isChecking = true;
@@ -93,6 +97,7 @@ async function checkStrategy() {
   isChecking = false;
 }
 
+// --- Inicialização do Bot ---
 console.log("==> BOT DE REVERSÃO EMA INICIADO <==");
 console.log(`   - Ativo: ${SYMBOL} | Categoria: ${CATEGORY}`);
 console.log(`   - Estratégia: EMA(${EMA_PERIOD}) +/- ${EMA_BAND_PERCENT * 100}% no gráfico de ${KLINE_INTERVAL}m`);
