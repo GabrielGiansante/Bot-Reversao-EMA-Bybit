@@ -1,5 +1,5 @@
 // =================================================================
-// BOT DE REVERSÃO EMA - VERSÃO DE TESTE RÁPIDO (GATILHO 0.1%)
+// BOT DE REVERSÃO EMA - VERSÃO FINAL COM SÍMBOLO BTCUSDC
 // =================================================================
 
 const { RestClientV5 } = require('bybit-api');
@@ -8,12 +8,12 @@ const TA = require('technicalindicators');
 // --- Configurações do Bot ---
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
-const SYMBOL = 'BTC-PERP'; 
+const SYMBOL = 'BTCUSDC'; // <-- SÍMBOLO CORRETO CONFORME SUA VERIFICAÇÃO
 const CATEGORY = 'linear';
 const LEVERAGE_LONG = 10;
 const LEVERAGE_SHORT = 5;
 const EMA_PERIOD = 3;
-const EMA_BAND_PERCENT = 0.001; // <-- MUDANÇA PARA 0.1% DE TESTE
+const EMA_BAND_PERCENT = 0.001; // Gatilho de teste 0.1%
 const KLINE_INTERVAL = '60';
 const MIN_ORDER_QTY = 0.001;
 
@@ -44,8 +44,13 @@ async function getAvailableBalance() {
     if (response.retCode !== 0) { console.error("Erro da API ao buscar Saldo:", JSON.stringify(response)); return 0; }
     if (response.result.list && response.result.list.length > 0) {
       const usdcBalance = response.result.list[0].coin.find(c => c.coin === 'USDC');
-      if (usdcBalance && usdcBalance.equity) { return parseFloat(usdcBalance.equity); }
+      if (usdcBalance && usdcBalance.equity) { 
+          const balance = parseFloat(usdcBalance.equity);
+          console.log(`>> SALDO DISPONÍVEL (Equity USDC) DETECTADO: $${balance.toFixed(2)}`);
+          return balance;
+      }
     }
+    console.error("Saldo USDC não encontrado na conta unificada.");
     return 0;
   } catch (error) { console.error("Erro CRÍTICO ao buscar saldo:", error); return 0; }
 }
