@@ -1,6 +1,5 @@
 // =================================================================
-// BOT DE REVERSÃO EMA - VERSÃO 1.0
-// Estratégia: Reversão baseada na EMA(3) no gráfico de 1h
+// BOT DE REVERSÃO EMA - VERSÃO DE DIAGNÓSTICO COMPLETA
 // =================================================================
 
 const { RestClientV5 } = require('bybit-api');
@@ -10,69 +9,73 @@ const TA = require('technicalindicators');
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
 const SYMBOL = 'BTCUSDC';
+const CATEGORY = 'linear'; // Vamos testar com 'linear' primeiro
 const LEVERAGE_LONG = 10;
 const LEVERAGE_SHORT = 5;
 const EMA_PERIOD = 3;
-const EMA_BAND_PERCENT = 0.003; // 0.3%
-const KLINE_INTERVAL = '60'; // Gráfico de 1 hora
-const MIN_ORDER_QTY = 0.001; // Mínimo para BTC
+const EMA_BAND_PERCENT = 0.003;
+const KLINE_INTERVAL = '60';
+const MIN_ORDER_QTY = 0.001;
 
-// --- Variáveis de Estado ---
-// 'None', 'Long', ou 'Short'
 let currentPositionSide = 'None'; 
-let isChecking = false; // Trava para evitar execuções simultâneas
+let isChecking = false;
 
 const client = new RestClientV5({ key: API_KEY, secret: API_SECRET, testnet: false });
 
-// --- Funções de API e Indicadores ---
+// --- Funções com tratamento de erro detalhado ---
 async function getKlineData() {
   try {
-    const kline = await client.getKline({
-      category: 'linear',
-      symbol: SYMBOL,
-      interval: KLINE_INTERVAL,
-      limit: EMA_PERIOD + 5, // Pega algumas velas a mais para garantir
-    });
-    // Inverte para ter os dados do mais antigo para o mais recente
+    const kline = await client.getKline({ category: CATEGORY, symbol: SYMBOL, interval: KLINE_INTERVAL, limit: EMA_PERIOD + 5 });
+    if (kline.retCode !== 0) {
+        console.error("Erro da API ao buscar Kline:", JSON.stringify(kline));
+        return [];
+    }
     return kline.result.list.map(k => parseFloat(k[4])).reverse();
   } catch (error) {
-    console.error("Erro ao buscar dados históricos (Kline):", error.message);
+    console.error("Erro CRÍTICO na chamada de Kline:", error);
     return [];
   }
 }
 
 async function getCurrentPrice() {
     try {
-        const ticker = await client.getTickers({ category: 'linear', symbol: SYMBOL });
+        const ticker = await client.getTickers({ category: CATEGORY, symbol: SYMBOL });
+        if (ticker.retCode !== 0) {
+            console.error("Erro da API ao buscar Preço:", JSON.stringify(ticker));
+            return null;
+        }
         return parseFloat(ticker.result.list[0].lastPrice);
     } catch (error) {
-        console.error("Erro ao buscar preço atual:", error.message);
+        console.error("Erro CRÍTICO na chamada de Preço:", error);
         return null;
     }
 }
 
 async function getAvailableBalance() {
   try {
-    const response = await client.getWalletBalance({ accountType: 'UNIFIED' });
-    if (response.retCode === 0 && response.result.list.length > 0) {
+    const response = await client.getWalletBalance({ accountType: 'UNIFIED' }); // Assumindo conta UTA
+    if (response.retCode !== 0) {
+        console.error("Erro da API ao buscar Saldo:", JSON.stringify(response));
+        return 0;
+    }
+    if (response.result.list && response.result.list.length > 0) {
       const usdcBalance = response.result.list[0].coin.find(c => c.coin === 'USDC');
       if (usdcBalance && usdcBalance.equity) {
         return parseFloat(usdcBalance.equity);
       }
     }
     return 0;
-  } catch (error) { console.error("Erro ao buscar saldo:", error.message); return 0; }
+  } catch (error) { console.error("Erro CRÍTICO ao buscar saldo:", error); return 0; }
 }
 
 async function placeReverseOrder(side, leverage) {
     const balance = await getAvailableBalance();
     const price = await getCurrentPrice();
-    if (!balance || !price || balance < 10) { // Trava de segurança de saldo mínimo
+    if (!balance || !price || balance < 10) {
         console.error("Saldo ou preço indisponível, ou saldo menor que $10. Abortando ordem.");
         return;
     }
     
-    // Calcula o tamanho da posição com base no saldo total e na nova alavancagem
     const positionValue = balance * leverage;
     const theoreticalQty = positionValue / price;
     const adjustedQty = Math.floor(theoreticalQty / MIN_ORDER_QTY) * MIN_ORDER_QTY;
@@ -88,23 +91,17 @@ async function placeReverseOrder(side, leverage) {
     console.log(`   - Valor da Posição: $${positionValue.toFixed(2)}, Qty: ${finalQty} BTC`);
 
     try {
-        // Define a alavancagem para a nova posição
-        await client.setLeverage({ category: 'linear', symbol: SYMBOL, buyLeverage: String(leverage), sellLeverage: String(leverage) });
+        await client.setLeverage({ category: CATEGORY, symbol: SYMBOL, buyLeverage: String(leverage), sellLeverage: String(leverage) });
         
-        // Envia a ordem. Para reverter, o tamanho é o DOBRO da posição atual, se houver.
-        // Mas como a estratégia é fechar e abrir, vamos fazer em 2 passos para clareza.
-        
-        // 1. Fecha qualquer posição existente
         console.log("   - Passo 1: Fechando posições existentes (se houver)...");
-        await client.submitOrder({ category: 'linear', symbol: SYMBOL, side: side === 'Long' ? 'Sell' : 'Buy', orderType: 'Market', qty: '0', reduceOnly: true, closeOnTrigger: true });
+        await client.cancelAllOrders({ category: CATEGORY, symbol: SYMBOL });
+        await client.submitOrder({ category: CATEGORY, symbol: SYMBOL, side: side === 'Long' ? 'Sell' : 'Buy', orderType: 'Market', qty: '0', reduceOnly: true, closeOnTrigger: true });
         
-        // Pausa para a corretora processar
         await new Promise(resolve => setTimeout(resolve, 5000));
         
-        // 2. Abre a nova posição
         console.log("   - Passo 2: Abrindo nova posição...");
         const res = await client.submitOrder({
-            category: 'linear',
+            category: CATEGORY,
             symbol: SYMBOL,
             side: side === 'Long' ? 'Buy' : 'Sell',
             orderType: 'Market',
@@ -113,32 +110,30 @@ async function placeReverseOrder(side, leverage) {
 
         if (res.retCode === 0) {
             console.log(`>> SUCESSO! Posição ${side.toUpperCase()} aberta.`);
-            currentPositionSide = side; // Atualiza nosso estado
+            currentPositionSide = side;
         } else {
             console.error("ERRO DE NEGÓCIO DA BYBIT (REVERSÃO):", JSON.stringify(res));
         }
 
     } catch (error) {
-        console.error("ERRO CRÍTICO NA CHAMADA DE REVERSÃO:", error.message);
+        console.error("ERRO CRÍTICO NA CHAMADA DE REVERSÃO:", error);
     }
 }
 
 // --- Lógica Principal do Bot ---
 async function checkStrategy() {
   if (isChecking) {
-    // console.log("Ciclo anterior ainda em execução, pulando.");
     return;
   }
-  isChecking = true; // Trava a função
-  
+  isChecking = true;
   console.log(`------------------ [${new Date().toLocaleString()}] ------------------`);
   
   const closes = await getKlineData();
   const price = await getCurrentPrice();
   
   if (closes.length < EMA_PERIOD || !price) {
-    console.log("Dados insuficientes para calcular a estratégia. Aguardando...");
-    isChecking = false; // Libera a trava
+    console.log("Dados insuficientes para calcular a estratégia. Verifique os erros acima.");
+    isChecking = false;
     return;
   }
   
@@ -146,7 +141,7 @@ async function checkStrategy() {
   const upperBand = ema * (1 + EMA_BAND_PERCENT);
   const lowerBand = ema * (1 - EMA_BAND_PERCENT);
   
-  console.log(`Preço: ${price.toFixed(2)} | EMA(${EMA_PERIOD}): ${ema.toFixed(2)} | Banda Superior: ${upperBand.toFixed(2)} | Banda Inferior: ${lowerBand.toFixed(2)}`);
+  console.log(`Preço: ${price.toFixed(2)} | EMA(${EMA_PERIOD}): ${ema.toFixed(2)} | Banda Sup: ${upperBand.toFixed(2)} | Banda Inf: ${lowerBand.toFixed(2)}`);
   console.log(`Posição Atual: ${currentPositionSide}`);
 
   // Lógica de Reversão
@@ -158,15 +153,14 @@ async function checkStrategy() {
     console.log("Nenhum sinal de reversão. Mantendo posição.");
   }
 
-  isChecking = false; // Libera a trava
+  isChecking = false;
 }
 
 // --- Inicialização do Bot ---
-console.log("==> BOT DE REVERSÃO EMA INICIADO <==");
-console.log(`   - Ativo: ${SYMBOL}`);
+console.log("==> BOT DE REVERSÃO EMA INICIADO (MODO DIAGNÓSTICO) <==");
+console.log(`   - Ativo: ${SYMBOL} | Categoria: ${CATEGORY}`);
 console.log(`   - Estratégia: EMA(${EMA_PERIOD}) +/- ${EMA_BAND_PERCENT * 100}% no gráfico de ${KLINE_INTERVAL}m`);
 console.log(`   - Long: ${LEVERAGE_LONG}x | Short: ${LEVERAGE_SHORT}x`);
 
-// Roda a primeira verificação e depois a cada 1 minuto
 checkStrategy(); 
-setInterval(checkStrategy, 60 * 1000); // Roda a cada 60 segundos
+setInterval(checkStrategy, 60 * 1000);
